@@ -4,41 +4,52 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import folium
+import webbrowser
 
-# ---- PARAMÈTRES ---- #
-NUM_VILLES = 20  # Nombre de villes
-NUM_FOURMIS = 20  # Nombre de fourmis simulées
-ITERATIONS = 100  # Nombre d'itérations
-EVAPORATION = 0.5  # Taux d'évaporation des phéromones
-ALPHA = 1  # Importance des phéromones
-BETA = 2  # Importance de la distance
-Q = 100  # Quantité de phéromone déposée
+# ---- CHARGEMENT DES DONNÉES ---- #
+print("Chargement des données...")
+file_path = "aires-de-livraison.csv"
+df_villes = pd.read_csv(file_path, delimiter=";")
+print(f"Nombre de points de livraison : {len(df_villes)}")
 
-# ---- GÉNÉRATION DES DONNÉES ---- #
-np.random.seed(42)
+# Extraction des coordonnées GPS
+df_villes[['Latitude', 'Longitude']] = df_villes['geo_point_2d'].str.split(',', expand=True)
+df_villes['Latitude'] = df_villes['Latitude'].astype(float)
+df_villes['Longitude'] = df_villes['Longitude'].astype(float)
 
-# Génération de villes avec des coordonnées aléatoires
-villes = np.random.rand(NUM_VILLES, 2) * 100
-noms_villes = [f'Ville_{i+1}' for i in range(NUM_VILLES)]
+# Liste des villes et coordonnées
+noms_villes = df_villes['ADRESSE'].sample(n=6, random_state=42).tolist()
+villes = df_villes[['Latitude', 'Longitude']].sample(n=6, random_state=42).to_numpy()
+NUM_VILLES = 6
+print(f"Nombre total de villes chargées : {NUM_VILLES}")
 
-# Calcul des distances entre villes
+# ---- CALCUL DES DISTANCES ---- #
 def calculer_distances(villes):
     num_villes = len(villes)
     distances = np.zeros((num_villes, num_villes))
     for i in range(num_villes):
         for j in range(num_villes):
             if i != j:
-                distances[i, j] = np.linalg.norm(villes[i] - villes[j])
+                distances[i, j] = max(np.linalg.norm(villes[i] - villes[j]), 1e-6)  # Éviter division par 0
     return distances
 
 distances = calculer_distances(villes)
+print("Distances calculées avec succès.")
 
 # Sélection d'un entrepôt aléatoire
 entrepot_index = np.random.randint(NUM_VILLES)
 entrepot_coords = villes[entrepot_index]
+print(f"Entrepôt sélectionné : {noms_villes[entrepot_index]} ({entrepot_coords})")
 
-# ---- INITIALISATION DES PHÉROMONES ---- #
+# ---- PARAMÈTRES ACO ---- #
+NUM_FOURMIS = 20
+ITERATIONS = 100
+EVAPORATION = 0.5
+ALPHA = 1
+BETA = 2
+Q = 100
 pheromones = np.ones((NUM_VILLES, NUM_VILLES))
+print("Paramètres de l'algorithme initialisés.")
 
 # ---- FONCTIONS DE L'ALGORITHME ---- #
 def choisir_prochaine_ville(ville_actuelle, villes_non_visitées, pheromones, distances):
@@ -46,7 +57,14 @@ def choisir_prochaine_ville(ville_actuelle, villes_non_visitées, pheromones, di
     for ville in villes_non_visitées:
         attrait = (pheromones[ville_actuelle, ville] ** ALPHA) * ((1 / distances[ville_actuelle, ville]) ** BETA)
         probabilites.append(attrait)
-    probabilites = np.array(probabilites) / np.sum(probabilites)
+    
+    probabilites = np.array(probabilites)
+    somme_probabilites = np.sum(probabilites)
+    
+    if somme_probabilites == 0:
+        return np.random.choice(villes_non_visitées)  # Sélection aléatoire si aucune probabilité valide
+    
+    probabilites /= somme_probabilites  # Normalisation
     return np.random.choice(villes_non_visitées, p=probabilites)
 
 def simulation_fourmis():
@@ -54,6 +72,7 @@ def simulation_fourmis():
     meilleur_chemin = None
     meilleure_distance = float('inf')
 
+    print("Début de la simulation des fourmis...")
     for iteration in range(ITERATIONS):
         chemins = []
         longueurs_chemins = []
@@ -77,23 +96,29 @@ def simulation_fourmis():
             if longueur < meilleure_distance:
                 meilleure_distance = longueur
                 meilleur_chemin = chemin
-
+        
+        if iteration % 10 == 0:
+            print(f"Iteration {iteration} : meilleure distance = {meilleure_distance}")
+        
         pheromones *= (1 - EVAPORATION)
         for chemin, longueur in zip(chemins, longueurs_chemins):
             contribution = Q / longueur
             for i in range(len(chemin) - 1):
                 pheromones[chemin[i], chemin[i+1]] += contribution
                 pheromones[chemin[i+1], chemin[i]] += contribution
-
+    
+    print("Simulation terminée.")
     return meilleur_chemin, meilleure_distance
 
 # ---- EXÉCUTION ---- #
 chemin_optimal, distance_minimale = simulation_fourmis()
+print("Chemin optimal trouvé :", chemin_optimal)
+print("Distance minimale parcourue :", distance_minimale)
 
 # ---- AFFICHAGE SUR FOLIUM ---- #
 latitude_centre = np.mean(villes[:, 0])
 longitude_centre = np.mean(villes[:, 1])
-map_livraison = folium.Map(location=[latitude_centre, longitude_centre], zoom_start=10)
+map_livraison = folium.Map(location=[latitude_centre, longitude_centre], zoom_start=12)
 
 # Ajouter l'entrepôt
 folium.Marker(
@@ -117,3 +142,6 @@ folium.PolyLine(chemin_coords, color="black", weight=2.5, opacity=1).add_to(map_
 # Sauvegarde de la carte
 map_livraison.save("carte_livraison.html")
 print("Carte sauvegardée sous 'carte_livraison.html'")
+
+# Ouvrir automatiquement la carte
+webbrowser.open("carte_livraison.html")
