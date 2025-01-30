@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import folium
 import webbrowser
+from math import radians, sin, cos, sqrt, atan2
 
 # ---- CHARGEMENT DES DONNÉES ---- #
 print("Chargement des données...")
@@ -23,18 +24,27 @@ villes = df_villes[['Latitude', 'Longitude']].sample(n=6, random_state=42).to_nu
 NUM_VILLES = 6
 print(f"Nombre total de villes chargées : {NUM_VILLES}")
 
-# ---- CALCUL DES DISTANCES ---- #
+# ---- CALCUL DES DISTANCES (Haversine) ---- #
+R = 6371  # Rayon de la Terre en kilomètres
+def haversine(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    return R * c
+
 def calculer_distances(villes):
     num_villes = len(villes)
     distances = np.zeros((num_villes, num_villes))
     for i in range(num_villes):
         for j in range(num_villes):
             if i != j:
-                distances[i, j] = max(np.linalg.norm(villes[i] - villes[j]), 1e-6)  # Éviter division par 0
+                distances[i, j] = haversine(villes[i][0], villes[i][1], villes[j][0], villes[j][1])
     return distances
 
 distances = calculer_distances(villes)
-print("Distances calculées avec succès.")
+print("Distances calculées avec succès (en km).")
 
 # Sélection d'un entrepôt aléatoire
 entrepot_index = np.random.randint(NUM_VILLES)
@@ -98,7 +108,7 @@ def simulation_fourmis():
                 meilleur_chemin = chemin
         
         if iteration % 10 == 0:
-            print(f"Iteration {iteration} : meilleure distance = {meilleure_distance}")
+            print(f"Iteration {iteration} : meilleure distance = {meilleure_distance:.2f} km")
         
         pheromones *= (1 - EVAPORATION)
         for chemin, longueur in zip(chemins, longueurs_chemins):
@@ -113,7 +123,7 @@ def simulation_fourmis():
 # ---- EXÉCUTION ---- #
 chemin_optimal, distance_minimale = simulation_fourmis()
 print("Chemin optimal trouvé :", chemin_optimal)
-print("Distance minimale parcourue :", distance_minimale)
+print(f"Distance minimale parcourue : {distance_minimale:.2f} km")
 
 # ---- AFFICHAGE SUR FOLIUM ---- #
 latitude_centre = np.mean(villes[:, 0])
