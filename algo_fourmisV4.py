@@ -85,14 +85,22 @@ def afficher_pheromones_sur_carte():
             popup=noms_villes[i]
         ).add_to(map_livraison)
     
-    # Ajouter les chemins en suivant le réseau routier
+    # Ajouter les chemins en suivant le réseau routier (phéromones en vert, chemin optimal en rouge)
     for i in range(NUM_VILLES):
         for j in range(NUM_VILLES):
-            if i != j and pheromones[i, j] > 0:
+            if i != j:
                 try:
                     route = nx.shortest_path(G, ox.distance.nearest_nodes(G, villes[i][1], villes[i][0]), ox.distance.nearest_nodes(G, villes[j][1], villes[j][0]), weight='length')
                     route_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
-                    folium.PolyLine(route_coords, color='green', weight=2, opacity=0.7).add_to(map_livraison)
+                    
+                    if (i, j) in zip(chemin_optimal, chemin_optimal[1:]):
+                        color = 'red'  # Chemin optimal
+                        weight = 4
+                    else:
+                        color = 'green'  # Phéromones
+                        weight = 2
+                    
+                    folium.PolyLine(route_coords, color=color, weight=weight, opacity=0.7).add_to(map_livraison)
                 except nx.NetworkXNoPath:
                     continue
     
