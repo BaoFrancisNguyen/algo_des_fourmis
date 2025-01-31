@@ -15,12 +15,12 @@ file_path = "aires-de-livraison.csv"
 df_villes = pd.read_csv(file_path, delimiter=";")
 print(f"Nombre de points de livraison : {len(df_villes)}")
 
-# Demander les paramètres à l'utilisateur
+# Demander les paramètres à l'utilisateur pour la simulation / nombre de villes, fourmis et itérations
 NUM_VILLES = int(input('Nombre de villes à inclure dans la simulation : '))
 NUM_FOURMIS = int(input('Nombre de fourmis dans la simulation : '))
 ITERATIONS = int(input('Nombre d\'itérations de l\'algorithme : '))
 
-# Extraction des coordonnées GPS
+# Extraction des coordonnées GPS de la colonne 'geo_point_2d' / à couper en deux
 df_villes[['Latitude', 'Longitude']] = df_villes['geo_point_2d'].str.split(',', expand=True)
 df_villes['Latitude'] = df_villes['Latitude'].astype(float)
 df_villes['Longitude'] = df_villes['Longitude'].astype(float)
@@ -53,23 +53,30 @@ def calculer_distances_osm(villes):
 
 distances = calculer_distances_osm(villes)
 
-# Sélection d'un entrepôt aléatoire
+# Sélection d'un entrepôt aléatoire / adresse de l'entrepôt et coordonnées
 entrepot_index = np.random.randint(NUM_VILLES)
 entrepot_coords = villes[entrepot_index]
 print(f"Entrepôt sélectionné : {noms_villes[entrepot_index]} ({entrepot_coords})")
 
 # ---- PARAMÈTRES ACO ---- #
-EVAPORATION = 0.5
-ALPHA = 1
-BETA = 2
-Q = 100
+
+EVAPORATION = 0.5 # Taux d'évaporation des phéromones entre chaque itération /exemple : 0.5 → 50% des phéromones s'évaporent à chaque itération
+ALPHA = 1 # Poids des phéromones  /Si ALPHA est élevé → Les fourmis suivent fortement les chemins déjà empruntés, 
+#si ALPHA est faible → Les fourmis ont tendance à explorer de nouveaux chemins
+BETA = 2 # (Attractivité heuristique - inverse de la distance) / Poids des distances /Si BETA est élevé → 
+#Les fourmis privilégient les chemins les plus courts, si BETA est faible → Les fourmis privilégient les chemins avec plus de phéromones
+Q = 100 # Quantité de phéromones déposée
+
+#Pour favoriser l'exploration → Diminue ALPHA, augmente BETA.
+#Pour renforcer les chemins déjà découverts → Augmente ALPHA, diminue BETA.
+#Pour accélérer la convergence vers une solution → Augmente Q, mais cela peut réduire la diversité des solutions.
+
 pheromones = np.ones((NUM_VILLES, NUM_VILLES))
 print("Paramètres de l'algorithme initialisés.")
 
 # ---- FONCTION POUR AFFICHER LES PHÉROMONES SUR LA CARTE ---- #
 #Trajets affichés avec une intensité proportionnelle au niveau de phéromones
 
-# ---- FONCTION POUR AFFICHER LES PHÉROMONES SUR LA CARTE ---- #
 def afficher_pheromones_sur_carte():
     print("Génération de la carte avec trajets routiers...")
     G = ox.graph_from_point((np.mean(villes[:, 0]), np.mean(villes[:, 1])), dist=10000, network_type='drive')
@@ -96,7 +103,7 @@ def afficher_pheromones_sur_carte():
                     
                     if (i, j) in zip(chemin_optimal, chemin_optimal[1:]):
                         color = 'red'  # Chemin optimal
-                        weight = 4
+                        weight = 6
                     else:
                         color = 'green'  # Phéromones
                         weight = 2
