@@ -60,12 +60,17 @@ print(f"Entrepôt sélectionné : {noms_villes[entrepot_index]} ({entrepot_coord
 
 # ---- PARAMÈTRES ACO ---- #
 
-EVAPORATION = 0.5 # Taux d'évaporation des phéromones entre chaque itération /exemple : 0.5 → 50% des phéromones s'évaporent à chaque itération
+EVAPORATION = 0.7 # Taux d'évaporation des phéromones entre chaque itération /exemple : 0.5 → 50% des phéromones s'évaporent à chaque itération
 ALPHA = 1 # Poids des phéromones  /Si ALPHA est élevé → Les fourmis suivent fortement les chemins déjà empruntés, 
 #si ALPHA est faible → Les fourmis ont tendance à explorer de nouveaux chemins
 BETA = 2 # (Attractivité heuristique - inverse de la distance) / Poids des distances /Si BETA est élevé → 
 #Les fourmis privilégient les chemins les plus courts, si BETA est faible → Les fourmis privilégient les chemins avec plus de phéromones
-Q = 100 # Quantité de phéromones déposée
+Q = 500 # Quantité de phéromones déposée
+
+# ayant testé plusieurs valeurs, les paramètres suivants ont été retenus :*
+# avec Q = 100, ALPHA = 1, BETA = 2 et EVAPORATION = 0.5 >>> constatation : allers-retours inutiles
+# ALPHA = 1, BETA = 2, Q = 500, EVAPORATION = 0.7
+
 
 #Pour favoriser l'exploration → Diminue ALPHA, augmente BETA.
 #Pour renforcer les chemins déjà découverts → Augmente ALPHA, diminue BETA.
@@ -82,35 +87,36 @@ def afficher_pheromones_sur_carte():
     G = ox.graph_from_point((np.mean(villes[:, 0]), np.mean(villes[:, 1])), dist=10000, network_type='drive')
     map_livraison = folium.Map(location=[np.mean(villes[:, 0]), np.mean(villes[:, 1])], zoom_start=12)
     
-    # Ajouter les villes et entrepôt
-    for i, ville in enumerate(villes):
-        folium.CircleMarker(
+    # Afficher les villes dans l'ordre optimal
+    for index, ville_index in enumerate(chemin_optimal):
+        ville = villes[ville_index]
+        folium.Marker(
             location=[ville[0], ville[1]],
-            radius=5,
-            color='blue' if i != entrepot_index else 'red',
-            fill=True,
-            fill_color='blue' if i != entrepot_index else 'red',
-            popup=noms_villes[i]
+            icon=folium.DivIcon(html=f'<div style="font-size: 12pt; font-weight: bold; color: black;">{index+1}</div>'),
+            popup=f"{noms_villes[ville_index]} (Stop {index+1})"
         ).add_to(map_livraison)
     
-    # Ajouter les chemins en suivant le réseau routier (phéromones en vert, chemin optimal en rouge)
-    for i in tqdm(range(NUM_VILLES), desc="Affichage des trajets"):
+    # Ajouter les phéromones en vert
+    for i in range(NUM_VILLES):
         for j in range(NUM_VILLES):
-            if i != j:
+            if i != j and pheromones[i, j] > 0:
                 try:
                     route = nx.shortest_path(G, ox.distance.nearest_nodes(G, villes[i][1], villes[i][0]), ox.distance.nearest_nodes(G, villes[j][1], villes[j][0]), weight='length')
                     route_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
-                    
-                    if (i, j) in zip(chemin_optimal, chemin_optimal[1:]):
-                        color = 'red'  # Chemin optimal
-                        weight = 6
-                    else:
-                        color = 'green'  # Phéromones
-                        weight = 2
-                    
-                    folium.PolyLine(route_coords, color=color, weight=weight, opacity=0.7).add_to(map_livraison)
+                    folium.PolyLine(route_coords, color='blue', weight=2, opacity=0.5).add_to(map_livraison)
                 except nx.NetworkXNoPath:
                     continue
+    
+    # Ajouter le chemin optimal en rouge avec flèches
+    for i in tqdm(range(len(chemin_optimal) - 1), desc="Affichage des trajets"):
+        try:
+            route = nx.shortest_path(G, ox.distance.nearest_nodes(G, villes[chemin_optimal[i]][1], villes[chemin_optimal[i]][0]), ox.distance.nearest_nodes(G, villes[chemin_optimal[i+1]][1], villes[chemin_optimal[i+1]][0]), weight='length')
+            route_coords = [(G.nodes[n]['y'], G.nodes[n]['x']) for n in route]
+            for k in range(len(route_coords) - 1):
+                folium.PolyLine([route_coords[k], route_coords[k+1]], color='red', weight=6, opacity=0.7, dash_array='5,5').add_to(map_livraison)
+                
+        except nx.NetworkXNoPath:
+            continue
     
     # Sauvegarde et ouverture
     map_livraison.save("carte_pheromones.html")
@@ -133,6 +139,25 @@ def choisir_prochaine_ville(ville_actuelle, villes_non_visitées, pheromones, di
     
     probabilites /= somme_probabilites  # Normalisation
     return np.random.choice(villes_non_visitées, p=probabilites)
+
+# ---- FONCTIONS DE L'ALGORITHME ---- #
+
+def initialiser_solution_gloutonne():
+    """Crée une première solution basée sur la ville la plus proche"""
+    ville_depart = entrepot_index
+    chemin = [ville_depart]
+    villes_restantes = list(range(NUM_VILLES))
+    villes_restantes.remove(ville_depart)
+
+    while villes_restantes:
+        derniere_ville = chemin[-1]
+        prochaine_ville = min(villes_restantes, key=lambda x: distances[derniere_ville, x])
+        chemin.append(prochaine_ville)
+        villes_restantes.remove(prochaine_ville)
+
+    chemin.append(ville_depart)  # Retour à l'entrepôt
+    return chemin
+
 # ---- FONCTIONS DE L'ALGORITHME ---- #
 
 def simulation_fourmis():
@@ -180,6 +205,22 @@ def simulation_fourmis():
 
 # ---- EXÉCUTION ---- #
 chemin_optimal, distance_minimale = simulation_fourmis()
+
+def amelioration_2_opt(chemin):
+    """Applique l'algorithme 2-opt pour supprimer les croisements inutiles"""
+    amelioration = True
+    while amelioration:
+        amelioration = False
+        for i in range(1, len(chemin) - 2):
+            for j in range(i + 1, len(chemin) - 1):
+                if distances[chemin[i - 1], chemin[j]] + distances[chemin[i], chemin[j + 1]] < \
+                   distances[chemin[i - 1], chemin[i]] + distances[chemin[j], chemin[j + 1]]:
+                    chemin[i:j + 1] = reversed(chemin[i:j + 1])
+                    amelioration = True
+    return chemin
+
+chemin_optimal = amelioration_2_opt(chemin_optimal)
+
 print("Chemin optimal trouvé :", chemin_optimal)
 print(f"Distance minimale parcourue : {distance_minimale:.2f} km")
 
