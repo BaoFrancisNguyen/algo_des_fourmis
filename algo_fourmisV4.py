@@ -7,6 +7,7 @@ import folium
 import webbrowser
 import osmnx as ox
 import networkx as nx
+from tqdm import tqdm
 
 # ---- CHARGEMENT DES DONNÉES ---- #
 print("Chargement des données...")
@@ -39,7 +40,7 @@ def calculer_distances_osm(villes):
     num_villes = len(villes)
     distances = np.zeros((num_villes, num_villes))
     
-    for i in range(num_villes):
+    for i in tqdm(range(num_villes), desc="Calcul des distances"):
         for j in range(num_villes):
             if i != j:
                 try:
@@ -86,7 +87,7 @@ def afficher_pheromones_sur_carte():
         ).add_to(map_livraison)
     
     # Ajouter les chemins en suivant le réseau routier (phéromones en vert, chemin optimal en rouge)
-    for i in range(NUM_VILLES):
+    for i in tqdm(range(NUM_VILLES), desc="Affichage des trajets"):
         for j in range(NUM_VILLES):
             if i != j:
                 try:
